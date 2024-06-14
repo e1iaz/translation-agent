@@ -8,22 +8,27 @@ from dotenv import load_dotenv
 from icecream import ic
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-
-load_dotenv()  # read local .env file
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+load_dotenv()  # read local .env.third file
+base_url = os.getenv("BASE_URL")
+if base_url != None:
+    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=base_url)
+else:
+    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 MAX_TOKENS_PER_CHUNK = (
     1000  # if text is more than this many tokens, we'll break it up into
 )
+
+
 # discrete chunks to translate one chunk at a time
 
 
 def get_completion(
-    prompt: str,
-    system_message: str = "You are a helpful assistant.",
-    model: str = "gpt-4-turbo",
-    temperature: float = 0.3,
-    json_mode: bool = False,
+        prompt: str,
+        system_message: str = "You are a helpful assistant.",
+        model_name: str = "gpt-3.5-turbo",
+        temperature: float = 0.3,
+        json_mode: bool = False,
 ) -> Union[str, dict]:
     """
         Generate a completion using the OpenAI API.
@@ -32,8 +37,8 @@ def get_completion(
         prompt (str): The user's prompt or query.
         system_message (str, optional): The system message to set the context for the assistant.
             Defaults to "You are a helpful assistant.".
-        model (str, optional): The name of the OpenAI model to use for generating the completion.
-            Defaults to "gpt-4-turbo".
+        model_name (str, optional): The name of the OpenAI model to use for generating the completion.
+            Defaults to "gpt-3.5-turbo".
         temperature (float, optional): The sampling temperature for controlling the randomness of the generated text.
             Defaults to 0.3.
         json_mode (bool, optional): Whether to return the response in JSON format.
@@ -47,7 +52,7 @@ def get_completion(
 
     if json_mode:
         response = client.chat.completions.create(
-            model=model,
+            model=model_name,
             temperature=temperature,
             top_p=1,
             response_format={"type": "json_object"},
@@ -59,7 +64,7 @@ def get_completion(
         return response.choices[0].message.content
     else:
         response = client.chat.completions.create(
-            model=model,
+            model=model_name,
             temperature=temperature,
             top_p=1,
             messages=[
@@ -71,7 +76,7 @@ def get_completion(
 
 
 def one_chunk_initial_translation(
-    source_lang: str, target_lang: str, source_text: str
+        source_lang: str, target_lang: str, source_text: str, model_name: str = "gpt-3.5-turbo"
 ) -> str:
     """
     Translate the entire text as one chunk using an LLM.
@@ -95,17 +100,17 @@ Do not provide any explanations or text apart from the translation.
 
     prompt = translation_prompt.format(source_text=source_text)
 
-    translation = get_completion(prompt, system_message=system_message)
+    translation = get_completion(prompt, system_message=system_message, model_name=model_name)
 
     return translation
 
 
 def one_chunk_reflect_on_translation(
-    source_lang: str,
-    target_lang: str,
-    source_text: str,
-    translation_1: str,
-    country: str = "",
+        source_lang: str,
+        target_lang: str,
+        source_text: str,
+        translation_1: str,
+        country: str = "",
 ) -> str:
     """
     Use an LLM to reflect on the translation, treating the entire text as one chunk.
@@ -182,11 +187,11 @@ Output only the suggestions and nothing else."""
 
 
 def one_chunk_improve_translation(
-    source_lang: str,
-    target_lang: str,
-    source_text: str,
-    translation_1: str,
-    reflection: str,
+        source_lang: str,
+        target_lang: str,
+        source_text: str,
+        translation_1: str,
+        reflection: str,
 ) -> str:
     """
     Use the reflection to improve the translation, treating the entire text as one chunk.
@@ -238,7 +243,7 @@ Output only the new translation and nothing else."""
 
 
 def one_chunk_translate_text(
-    source_lang: str, target_lang: str, source_text: str, country: str = ""
+        source_lang: str, target_lang: str, source_text: str, country: str = "", model_name: str = "gpt-3.5-turbo"
 ) -> str:
     """
     Translate a single chunk of text from the source language to the target language.
@@ -256,7 +261,7 @@ def one_chunk_translate_text(
         str: The improved translation of the source text.
     """
     translation_1 = one_chunk_initial_translation(
-        source_lang, target_lang, source_text
+        source_lang, target_lang, source_text, model_name
     )
 
     reflection = one_chunk_reflect_on_translation(
@@ -270,7 +275,7 @@ def one_chunk_translate_text(
 
 
 def num_tokens_in_string(
-    input_str: str, encoding_name: str = "cl100k_base"
+        input_str: str, encoding_name: str = "cl100k_base"
 ) -> int:
     """
     Calculate the number of tokens in a given string using a specified encoding.
@@ -278,7 +283,7 @@ def num_tokens_in_string(
     Args:
         str (str): The input string to be tokenized.
         encoding_name (str, optional): The name of the encoding to use. Defaults to "cl100k_base",
-            which is the most commonly used encoder (used by GPT-4).
+            which is the most commonly used encoder (used by GPT-3.5).
 
     Returns:
         int: The number of tokens in the input string.
@@ -295,7 +300,7 @@ def num_tokens_in_string(
 
 
 def multichunk_initial_translation(
-    source_lang: str, target_lang: str, source_text_chunks: List[str]
+        source_lang: str, target_lang: str, source_text_chunks: List[str]
 ) -> List[str]:
     """
     Translate a text in multiple chunks from the source language to the target language.
@@ -333,11 +338,11 @@ Output only the translation of the portion you are asked to translate, and nothi
     for i in range(len(source_text_chunks)):
         # Will translate chunk i
         tagged_text = (
-            "".join(source_text_chunks[0:i])
-            + "<TRANSLATE_THIS>"
-            + source_text_chunks[i]
-            + "</TRANSLATE_THIS>"
-            + "".join(source_text_chunks[i + 1 :])
+                "".join(source_text_chunks[0:i])
+                + "<TRANSLATE_THIS>"
+                + source_text_chunks[i]
+                + "</TRANSLATE_THIS>"
+                + "".join(source_text_chunks[i + 1:])
         )
 
         prompt = translation_prompt.format(
@@ -354,11 +359,11 @@ Output only the translation of the portion you are asked to translate, and nothi
 
 
 def multichunk_reflect_on_translation(
-    source_lang: str,
-    target_lang: str,
-    source_text_chunks: List[str],
-    translation_1_chunks: List[str],
-    country: str = "",
+        source_lang: str,
+        target_lang: str,
+        source_text_chunks: List[str],
+        translation_1_chunks: List[str],
+        country: str = "",
 ) -> List[str]:
     """
     Provides constructive criticism and suggestions for improving a partial translation.
@@ -444,11 +449,11 @@ Output only the suggestions and nothing else."""
     for i in range(len(source_text_chunks)):
         # Will translate chunk i
         tagged_text = (
-            "".join(source_text_chunks[0:i])
-            + "<TRANSLATE_THIS>"
-            + source_text_chunks[i]
-            + "</TRANSLATE_THIS>"
-            + "".join(source_text_chunks[i + 1 :])
+                "".join(source_text_chunks[0:i])
+                + "<TRANSLATE_THIS>"
+                + source_text_chunks[i]
+                + "</TRANSLATE_THIS>"
+                + "".join(source_text_chunks[i + 1:])
         )
         if country != "":
             prompt = reflection_prompt.format(
@@ -475,11 +480,11 @@ Output only the suggestions and nothing else."""
 
 
 def multichunk_improve_translation(
-    source_lang: str,
-    target_lang: str,
-    source_text_chunks: List[str],
-    translation_1_chunks: List[str],
-    reflection_chunks: List[str],
+        source_lang: str,
+        target_lang: str,
+        source_text_chunks: List[str],
+        translation_1_chunks: List[str],
+        reflection_chunks: List[str],
 ) -> List[str]:
     """
     Improves the translation of a text from source language to target language by considering expert suggestions.
@@ -538,11 +543,11 @@ Output only the new translation of the indicated part and nothing else."""
     for i in range(len(source_text_chunks)):
         # Will translate chunk i
         tagged_text = (
-            "".join(source_text_chunks[0:i])
-            + "<TRANSLATE_THIS>"
-            + source_text_chunks[i]
-            + "</TRANSLATE_THIS>"
-            + "".join(source_text_chunks[i + 1 :])
+                "".join(source_text_chunks[0:i])
+                + "<TRANSLATE_THIS>"
+                + source_text_chunks[i]
+                + "</TRANSLATE_THIS>"
+                + "".join(source_text_chunks[i + 1:])
         )
 
         prompt = improvement_prompt.format(
@@ -561,7 +566,7 @@ Output only the new translation of the indicated part and nothing else."""
 
 
 def multichunk_translation(
-    source_lang, target_lang, source_text_chunks, country: str = ""
+        source_lang, target_lang, source_text_chunks, country: str = ""
 ):
     """
     Improves the translation of multiple text chunks based on the initial translation and reflection.
@@ -642,11 +647,12 @@ def calculate_chunk_size(token_count: int, token_limit: int) -> int:
 
 
 def translate(
-    source_lang,
-    target_lang,
-    source_text,
-    country,
-    max_tokens=MAX_TOKENS_PER_CHUNK,
+        source_lang,
+        target_lang,
+        source_text,
+        country,
+        max_tokens=MAX_TOKENS_PER_CHUNK,
+        model_name="gpt-3.5-turbo"
 ):
     """Translate the source_text from source_lang to target_lang."""
 
@@ -658,7 +664,7 @@ def translate(
         ic("Translating text as single chunk")
 
         final_translation = one_chunk_translate_text(
-            source_lang, target_lang, source_text, country
+            source_lang, target_lang, source_text, country, model_name
         )
 
         return final_translation
@@ -673,7 +679,7 @@ def translate(
         ic(token_size)
 
         text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            model_name="gpt-4",
+            model_name=model_name,
             chunk_size=token_size,
             chunk_overlap=0,
         )
